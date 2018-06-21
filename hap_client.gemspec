@@ -12,10 +12,11 @@ Gem::Specification.new do |s|
   s.homepage    = 'http://github.com/Seluxit/hap_client'
   s.license     = 'MIT'
 
-  s.add_dependency "http_parser.rb"
-  s.add_dependency "json"
-  s.add_dependency 'ruby_home', '0.1.0'
-  s.add_dependency "ruby_home-srp", '1.1.3'
+  s.add_dependency "eventmachine", '~> 1.2'
+  s.add_dependency "http_parser.rb", '~> 0.6'
+  s.add_dependency "json", '~> 2.1'
+  #s.add_dependency 'ruby_home', '0.1.0'
+  #s.add_dependency "ruby_home-srp", '1.1.3'
 
   s.add_development_dependency 'bundler', '~> 1.16'
   s.add_development_dependency 'rake', '~> 12.3'
