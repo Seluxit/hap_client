@@ -67,15 +67,14 @@ module HAP
         pair_verify_parse(data)
       else
         if !data.nil? and data != ""
-          puts data
           data = parse_accessories(data)
         end
-      end
 
-      if @callback
-        t = @callback
-        @callback = nil
-        t.call(data)
+        if @callback
+          t = @callback
+          @callback = nil
+          t.call(data)
+        end
       end
     end
 
