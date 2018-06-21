@@ -24,34 +24,71 @@ module HAP
     }.freeze
     ERROR_TYPES = ERROR_NAMES.invert.freeze
 
-    def pair_setup(password)
+    def pair_setup(password, &block)
       info("Pair Setup Step 1/3")
-      response = srp_start_request()
+      @mode = :pair_setup
+      @password = password
+      srp_start_request()
 
-      info("Pair Setup Step 2/3")
-      srp_verify_request(response, password)
-
-      info("Pair Setup Step 3/3")
-      srp_exchange_request()
+      if block_given?
+        @pair_setup_callback = block
+      end
     end
 
-    def pair_verify()
+    def pair_verify(&block)
       info("Pair Verify 1/2")
-      response = verify_start_request()
+      @mode = :pair_verify
+      verify_start_request()
 
-      info("Pair Verify 2/2")
-      verify_finish_request(response)
+      if block_given?
+        @pair_verify_callback = block
+      end
     end
 
     private
 
+    def pair_setup_parse(data)
+      begin
+        response = check_tlv_response(data)
+
+        case response['kTLVType_State']
+        when 2
+          info("Pair Setup Step 2/3")
+          srp_verify_request(response, @password)
+        when 4
+          srp_verify(response)
+
+          info("Pair Setup Step 3/3")
+          srp_exchange_request()
+        when 6
+          info("Verifying Server Exchange")
+          srp_exchange_verify(response)
+
+          call_pair_setup_callback(true)
+        else
+          error("Unknown Pair Setup State: #{response['kTLVType_State']}")
+        end
+      rescue PairingError => e
+        error("Pair Setup Error: #{e}")
+        call_pair_setup_callback(false, e.to_s)
+      end
+    end
+
+    def call_pair_setup_callback(status, data=nil)
+      if @pair_setup_callback
+        t = @pair_setup_callback
+        @pair_setup_callback = nil
+        t.call(status, data)
+      end
+    end
+
     def srp_start_request()
       debug("Pair Setup SRP Start Request")
       data = RubyHome::HAP::TLV.encode({
-                          'kTLVType_State' => 0x01,
-                          'kTLVType_Method' => 0x00
-                        })
-      check_tlv_response(post("/pair-setup", "application/pairing+tlv8", data))
+                                         'kTLVType_State' => 0x01,
+                                         'kTLVType_Method' => 0x00
+                                       })
+      post("/pair-setup", "application/pairing+tlv8", data)
     end
 
     def srp_verify_request(response, password)
@@ -65,31 +102,35 @@ module HAP
       serverPublicKey = bin_to_hex(response["kTLVType_PublicKey"])
 
       debug("Generating Client Public/Private Keys")
-      srp_client = RubyHome::SRP::Client.new(3072)
-      clientPublicKey = hex_to_bin(srp_client.start_authentication())
+      @srp_client = RubyHome::SRP::Client.new(3072)
+      clientPublicKey = hex_to_bin(@srp_client.start_authentication())
 
       debug("Process Challenge from Server")
-      client_M = hex_to_bin(srp_client.process_challenge(username, password, salt, serverPublicKey))
+      client_M = hex_to_bin(@srp_client.process_challenge(username, password, salt, serverPublicKey))
 
       debug("Send Client Proof to Server")
       data = RubyHome::HAP::TLV.encode({
-                          'kTLVType_Proof' => client_M,
-                          'kTLVType_PublicKey' => clientPublicKey,
-                          'kTLVType_State' => 3,
-                          'kTLVType_Method' => 0
-                        })
+                                         'kTLVType_Proof' => client_M,
+                                         'kTLVType_PublicKey' => clientPublicKey,
+                                         'kTLVType_State' => 3,
+                                         'kTLVType_Method' => 0
+                                       })
 
       # Save session key
-      @srp_session_key = srp_client.K
+      @srp_session_key = @srp_client.K
 
-      response = check_tlv_response(post("/pair-setup", "application/pairing+tlv8", data))
+      post("/pair-setup", "application/pairing+tlv8", data)
+    end
 
+    def srp_verify(response)
       debug("Verifying Server Proof")
       serverProof = bin_to_hex(response['kTLVType_Proof'])
 
-      unless srp_client.verify(serverProof)
+      unless @srp_client.verify(serverProof)
         raise PairingError, "Failed to verify server proof"
       end
+
+      @srp_client = nil
     end
 
     def srp_exchange_request()
@@ -105,7 +146,7 @@ module HAP
       debug("Generating Encryption key")
       hkdf = RubyHome::HAP::Crypto::HKDF.new(info: 'Pair-Setup-Encrypt-Info', salt: 'Pair-Setup-Encrypt-Salt')
       key = hkdf.encrypt(@srp_session_key)
-      chacha20poly1305ietf = RubyHome::HAP::Crypto::ChaCha20Poly1305.new(key)
+      @chacha20poly1305ietf = RubyHome::HAP::Crypto::ChaCha20Poly1305.new(key)
 
       debug("Generating ClientX")
       hkdf = RubyHome::HAP::Crypto::HKDF.new(info: 'Pair-Setup-Controller-Sign-Info', salt: 'Pair-Setup-Controller-Sign-Salt')
@@ -124,25 +165,29 @@ module HAP
 
       debug("Generating Encrypted Data")
       subtlv = RubyHome::HAP::TLV.encode({
-                            'kTLVType_Identifier' => @client_id,
-                            'kTLVType_PublicKey' => clientLTPK,
-                            'kTLVType_Signature' => clientSignature
-                          })
+                                           'kTLVType_Identifier' => @client_id,
+                                           'kTLVType_PublicKey' => clientLTPK,
+                                           'kTLVType_Signature' => clientSignature
+                                         })
       nonce = RubyHome::HAP::HexPad.pad('PS-Msg05')
-      encrypted_data = chacha20poly1305ietf.encrypt(nonce, subtlv)
+      encrypted_data = @chacha20poly1305ietf.encrypt(nonce, subtlv)
 
       debug("Sending Encrypted Request to Server")
       data = RubyHome::HAP::TLV.encode({
-                          'kTLVType_State' => 5,
-                          'kTLVType_EncryptedData' => encrypted_data
-                        })
-      response = check_tlv_response(post("/pair-setup", "application/pairing+tlv8", data))
+                                         'kTLVType_State' => 5,
+                                         'kTLVType_EncryptedData' => encrypted_data
+                                       })
+      post("/pair-setup", "application/pairing+tlv8", data)
+    end
 
+    def srp_exchange_verify(response)
       debug("Decrypting Server Response")
       encrypted_data = response['kTLVType_EncryptedData']
       nonce = RubyHome::HAP::HexPad.pad('PS-Msg06')
-      decrypted_data = chacha20poly1305ietf.decrypt(nonce, encrypted_data)
+
+      decrypted_data = @chacha20poly1305ietf.decrypt(nonce, encrypted_data)
       unpacked_decrypted_data = RubyHome::HAP::TLV.read(decrypted_data)
+      @chacha20poly1305ietf = nil
 
       debug("Verifying Server Signature")
       @serverPairingId = unpacked_decrypted_data['kTLVType_Identifier']
@@ -167,6 +212,36 @@ module HAP
       end
     end
 
+    def pair_verify_parse(data)
+      begin
+        response = check_tlv_response(data)
+
+        case response['kTLVType_State']
+        when 2
+          info("Pair Verify 2/2")
+          verify_finish_request(response)
+        when 4
+          verify_finish_verify()
+          @mode = :paired
+
+          call_pair_verify_callback(true)
+        else
+          error("Unknown Pair Verify State: #{response['kTLVType_State']}")
+        end
+      rescue PairingError => e
+        error("Pair Verify Error: #{e}")
+        call_pair_verify_callback(false, e.to_s)
+      end
+    end
+
+    def call_pair_verify_callback(status, data=nil)
+      if @pair_verify_callback
+        t = @pair_verify_callback
+        @pair_verify_callback = nil
+        t.call(status, data)
+      end
+    end
+
     def verify_start_request()
       debug("Generating new Session Public/Private Keys")
       @client_secret_key = X25519::Scalar.generate
@@ -174,20 +249,20 @@ module HAP
 
       debug("Sending verify Request to Server")
       data = RubyHome::HAP::TLV.encode({
-                          'kTLVType_State' => 1,
-                          'kTLVType_PublicKey' => @client_public_key
-                        })
-      check_tlv_response(post("/pair-verify", "application/pairing+tlv8", data))
+                                         'kTLVType_State' => 1,
+                                         'kTLVType_PublicKey' => @client_public_key
+                                       })
+      post("/pair-verify", "application/pairing+tlv8", data)
     end
 
     def verify_finish_request(response)
       debug("Generating shared secret")
       server_public_key = X25519::MontgomeryU.new(response['kTLVType_PublicKey'])
-      shared_secret = @client_secret_key.multiply(server_public_key).to_bytes
+      @shared_secret = @client_secret_key.multiply(server_public_key).to_bytes
 
       debug("Generating session key")
       hkdf = RubyHome::HAP::Crypto::HKDF.new(info: 'Pair-Verify-Encrypt-Info', salt: 'Pair-Verify-Encrypt-Salt')
-      session_key = hkdf.encrypt(shared_secret)
+      session_key = hkdf.encrypt(@shared_secret)
 
       debug("Decrypting data")
       subtlv = response['kTLVType_EncryptedData']
@@ -224,9 +299,9 @@ module HAP
 
       debug("Generating Encrypted Data")
       subtlv = RubyHome::HAP::TLV.encode({
-                            'kTLVType_Identifier' => @client_id,
-                            'kTLVType_Signature' => clientSignature
-                          })
+                                           'kTLVType_Identifier' => @client_id,
+                                           'kTLVType_Signature' => clientSignature
+                                         })
 
       chacha20poly1305ietf = RubyHome::HAP::Crypto::ChaCha20Poly1305.new(session_key)
       nonce = RubyHome::HAP::HexPad.pad('PV-Msg03')
@@ -234,19 +309,41 @@ module HAP
 
       debug("Sending Encrypted Request to Server")
       data = RubyHome::HAP::TLV.encode({
-                          'kTLVType_State' => 3,
-                          'kTLVType_EncryptedData' => encrypted_data
-                        })
+                                         'kTLVType_State' => 3,
+                                         'kTLVType_EncryptedData' => encrypted_data
+                                       })
 
-      check_tlv_response(post("/pair-verify", "application/pairing+tlv8", data))
+      post("/pair-verify", "application/pairing+tlv8", data)
+    end
 
+    def verify_finish_verify()
       hkdf = RubyHome::HAP::Crypto::HKDF.new(info: 'Control-Write-Encryption-Key', salt: 'Control-Salt')
-      @controller_to_accessory_key = hkdf.encrypt(shared_secret)
+      @controller_to_accessory_key = hkdf.encrypt(@shared_secret)
 
       hkdf = RubyHome::HAP::Crypto::HKDF.new(info: 'Control-Read-Encryption-Key', salt: 'Control-Salt')
-      @accessory_to_controller_key = hkdf.encrypt(shared_secret)
+      @accessory_to_controller_key = hkdf.encrypt(@shared_secret)
+
+      @shared_secret = nil
+
       info("Pair Verify Complete")
-  end
+    end
+
+    def get_pairing_context()
+      {
+        :client_id => @client_id,
+        :signature_key => @signature_key,
+        :accessoryltpk => @accessoryltpk.unpack1('H*')
+      }.to_json
+    end
+
+    def set_pairing_context(context)
+      context = JSON.parse(context)
+      @client_id = context['client_id']
+      @signature_key = context['signature_key']
+      @accessoryltpk = hex_to_bin(context['accessoryltpk'])
+
+      @signing_key = Ed25519::SigningKey.new([@signature_key].pack('H*'))
+    end
 
     def check_tlv_response(data)
       data = RubyHome::HAP::TLV.read(data)

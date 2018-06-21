@@ -1,20 +1,20 @@
 require 'json'
 
-require_relative 'log'
-require_relative 'parser'
-require_relative 'request'
-require_relative 'pairing'
+require_relative 'hap_client/log'
+require_relative 'hap_client/parser'
+require_relative 'hap_client/request'
+require_relative 'hap_client/pairing'
 
 module HAP
-  class Client
+  module Client
     include Log
     include Parser
     include Request
     include Pairing
 
-    def initialize(socket)
-      @socket = socket
+    def initialize
       @name = "Unknown Client"
+      @mode = :init
       init_log()
     end
 
@@ -28,16 +28,29 @@ module HAP
                               }]
       }
 
-      res = put("/characteristics", "application/hap+json", JSON.generate(data))
-      if res != ""
-        warn(res)
-      end
+      put("/characteristics", "application/hap+json", JSON.generate(data))
     end
 
-    def get_accessories()
+    def subscribe(aid, iid)
+      info("Subscribe to #{aid} #{iid}")
+      data = {
+        "characteristics" => [{
+                                "aid" => aid,
+                                "iid" => iid,
+                                "ev" => "true"
+                              }]
+      }
+
+      put("/characteristics", "application/hap+json", JSON.generate(data))
+    end
+
+    def get_accessories(&block)
       info("Get Accessories")
-      data = get("/")
-      parse_accessories(data)
+      get("/")
+
+      if block_given?
+        @callback = block
+      end
     end
 
     def to_s
@@ -46,23 +59,38 @@ module HAP
 
     private
 
+    def parse_message(data)
+      case @mode
+      when :pair_setup
+        pair_setup_parse(data)
+      when :pair_verify
+        pair_verify_parse(data)
+      else
+        if !data.nil? and data != ""
+          puts data
+          data = parse_accessories(data)
+        end
+      end
+
+      if @callback
+        t = @callback
+        @callback = nil
+        t.call(data)
+      end
+    end
+
     def parse_accessories(data)
       data = JSON.parse(data)
 
       services = data["accessories"][0]["services"]
 
       services.each do |service|
-        case service["type"]
-        when "3E"
+        if service["type"] == "3E"
           parse_characteristics(service)
-        when "43"
-
-        when "deadbeef-dead-abba-beef-123400000000"
-
-        else
-          warn("Unknown Service Type: " + service["type"])
         end
       end
+
+      return data
     end
 
     def parse_characteristics(service)

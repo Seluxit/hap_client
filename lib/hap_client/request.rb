@@ -35,7 +35,7 @@ module HAP
           if data[0] == '{'
             debug(req + data.to_s)
           else
-            debug(req + TLV.read(data).to_s)
+            debug(req + RubyHome::HAP::TLV.read(data).to_s)
           end
         else
           debug(req)
@@ -48,26 +48,21 @@ module HAP
 
       if encryption_ready?
         encrypt(req).each do |r|
-          @socket.write(r)
+          if @socket.nil?
+            send_data(r)
+          else
+            @socket.write(r)
+          end
         end
       else
-        @socket.write(req)
-      end
-
-      read()
-    end
-
-    def read()
-      init_parser()
-
-      while(!@complete)
-        d = @socket.recv(1042)
-        if encryption_ready?
-          d = decrypt(d)
+        if @socket.nil?
+          send_data(req)
+        else
+          @socket.write(req)
         end
-        receive_data(d)
       end
-      return @body
+
+      init_parser()
     end
   end
 end

@@ -3,11 +3,14 @@ require 'http/parser'
 module HAP
   module Parser
     def init_parser
-      @complete = false
       @parser = Http::Parser.new(self)
     end
 
     def receive_data(data)
+      if encryption_ready?
+        data = decrypt(data)
+      end
+
       @parser << data
     end
 
@@ -25,7 +28,8 @@ module HAP
     end
 
     def on_message_complete
-      @complete = true
+      parse_message(@body)
     end
+
   end
 end

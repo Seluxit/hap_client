@@ -1,5 +1,6 @@
 source "https://rubygems.org"
 
+gem "eventmachine"
 gem "http_parser.rb"
 gem "json"
 gem 'ruby_home', '0.1.0', :git => 'https://github.com/karlentwistle/ruby_home.git'
