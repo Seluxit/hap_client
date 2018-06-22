@@ -330,9 +330,9 @@ module HAP
 
     def get_pairing_context()
       {
-        :client_id => @client_id,
-        :signature_key => @signature_key,
-        :accessoryltpk => @accessoryltpk.unpack1('H*')
+        'client_id' => @client_id,
+        'signature_key' => @signature_key,
+        'accessoryltpk' => @accessoryltpk.unpack1('H*')
       }
     end
 
