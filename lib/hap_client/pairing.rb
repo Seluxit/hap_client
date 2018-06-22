@@ -333,11 +333,11 @@ module HAP
         :client_id => @client_id,
         :signature_key => @signature_key,
         :accessoryltpk => @accessoryltpk.unpack1('H*')
-      }.to_json
+      }
     end
 
     def set_pairing_context(context)
-      context = JSON.parse(context)
+      context = JSON.parse(context) if context.is_a?(String)
       @client_id = context['client_id']
       @signature_key = context['signature_key']
       @accessoryltpk = hex_to_bin(context['accessoryltpk'])
