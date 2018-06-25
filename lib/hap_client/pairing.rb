@@ -282,7 +282,12 @@ module HAP
       ].join
       verify_key = RbNaCl::Signatures::Ed25519::VerifyKey.new(@accessoryltpk)
 
-      if !verify_key.verify(serverSignature, [accessoryinfo].pack('H*'))
+      begin
+        if !verify_key.verify(serverSignature, [accessoryinfo].pack('H*'))
+          error("Server signature INVALID!")
+          raise PairingError, "Server signature INVALID!"
+        end
+      rescue RbNaCl::BadSignatureError
         error("Server signature INVALID!")
         raise PairingError, "Server signature INVALID!"
       end
