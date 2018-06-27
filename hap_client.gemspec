@@ -1,6 +1,11 @@
+lib = File.expand_path('../lib/', __FILE__)
+$:.unshift lib unless $:.include?(lib)
+
+require 'hap_client/version'
+
 Gem::Specification.new do |s|
   s.name        = 'hap_client'
-  s.version     = '0.0.1'
+  s.version     = HapClient::VERSION
   s.date        = '2018-06-15'
   s.summary     = "HAP client"
   s.description = "Ruby Gem for Apple Homekit Client"
@@ -15,11 +20,10 @@ Gem::Specification.new do |s|
   s.add_dependency "eventmachine", '~> 1.2'
   s.add_dependency "http_parser.rb", '~> 0.6'
   s.add_dependency "json", '~> 2.1'
-  #s.add_dependency 'ruby_home', '0.1.0'
-  #s.add_dependency "ruby_home-srp", '1.1.3'
+  s.add_dependency 'ruby_home', '0.1.2'
+  s.add_dependency "ruby_home-srp", '1.2.0'
 
   s.add_development_dependency 'bundler', '~> 1.16'
   s.add_development_dependency 'rake', '~> 12.3'
   s.add_development_dependency 'rspec', '~> 3.0'
-
 end
