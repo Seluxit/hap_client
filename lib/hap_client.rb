@@ -65,6 +65,10 @@ module HAP
       end
     end
 
+    def get_value(aid, iid)
+      @values[aid][iid][:value]
+    end
+
     def to_s
       @name
     end
