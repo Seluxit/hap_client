@@ -15,6 +15,7 @@ module HAP
     def initialize
       @name = "Unknown Client"
       @mode = :init
+      @values = {}
       init_log()
     end
 
@@ -44,6 +45,16 @@ module HAP
       put("/characteristics", "application/hap+json", JSON.generate(data))
     end
 
+    def subscribe_to_all()
+      @values.each do |service|
+        service.each do |val|
+          if val[:perms].include?("ev")
+            subscribe(val[:aid], val[:iid])
+          end
+        end
+      end
+    end
+
     def get_accessories(&block)
       info("Get Accessories")
       get("/")
@@ -54,7 +65,7 @@ module HAP
     end
 
     def to_s
-        @name
+      @name
     end
 
     private
@@ -79,33 +90,43 @@ module HAP
     end
 
     def parse_accessories(data)
-      data = JSON.parse(data)
+      data = JSON.parse(data, :symbolize_names=>true)
 
-      services = data["accessories"][0]["services"]
+      services = data[:accessories][0][:services]
 
       services.each do |service|
-        if service["type"] == "3E"
-          parse_characteristics(service)
-        end
+        @values[service[:type]] = {}
+
+        parse_characteristics(service)
       end
 
       return data
     end
 
     def parse_characteristics(service)
-      service["characteristics"].each do |char|
-        val = char["value"]
-        case char["type"]
-        when "20"
-          @manufacturer = val
-        when "21"
-          @model = val
-        when "23"
-          @name = val
-        when "30"
-          @serial = val
-        when "52"
-          @version = val
+      service[:characteristics].each do |char|
+        val = char[:value]
+
+        @values[service[:type]][char[:type]] = {
+          :aid => char[:aid],
+          :iid => char[:iid],
+          :perms => char[:perms},
+          :value => val
+        }
+
+        if service[:type] == "3E"
+          case char[:type]
+          when "20"
+            @manufacturer = val
+          when "21"
+            @model = val
+          when "23"
+            @name = val
+          when "30"
+            @serial = val
+          when "52"
+            @version = val
+          end
         end
       end
     end
