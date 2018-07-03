@@ -6,5 +6,6 @@ task :build do
 end
 
 task :release => :build do
-  system "gem push hap_client-#{HapClient::VERSION}"
+  system "gem push hap_client-#{HapClient::VERSION}.gem"
+  system "rm hap_client-#{HapClient::VERSION}.gem"
 end
