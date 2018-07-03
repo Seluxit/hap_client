@@ -204,9 +204,14 @@ module HAP
       ].join
       verify_key = RbNaCl::Signatures::Ed25519::VerifyKey.new(@accessoryltpk)
 
-      if verify_key.verify(serverSignature, [accessoryinfo].pack('H*'))
-        info("Pairing Success! Server Pairing ID: #{@serverPairingId}")
-      else
+      begin
+        if verify_key.verify(serverSignature, [accessoryinfo].pack('H*'))
+          info("Pairing Success! Server Pairing ID: #{@serverPairingId}")
+        else
+          error("Failed to verify Server Signature")
+          raise PairingError, "Failed to verify Server Signature"
+        end
+      rescue RbNaCl::BadSignatureError
         error("Failed to verify Server Signature")
         raise PairingError, "Failed to verify Server Signature"
       end
