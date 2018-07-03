@@ -47,9 +47,10 @@ module HAP
 
     def subscribe_to_all()
       @values.each do |service|
-        service.each do |val|
-          if val[:perms].include?("ev")
-            subscribe(val[:aid], val[:iid])
+        service[1].each do |val|
+          value = val[1]
+          if value[:perms].include?("ev")
+            subscribe(value[:aid], value[:iid])
           end
         end
       end
@@ -110,7 +111,7 @@ module HAP
         @values[service[:type]][char[:type]] = {
           :aid => char[:aid],
           :iid => char[:iid],
-          :perms => char[:perms},
+          :perms => char[:perms],
           :value => val
         }
 
