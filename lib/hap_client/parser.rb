@@ -9,6 +9,10 @@ module HAP
     def receive_data(data)
       if encryption_ready?
         data = decrypt(data)
+
+        if data.start_with?("EVENT/")
+          data.sub!("EVENT/","HTTP/")
+        end
       end
 
       @parser << data

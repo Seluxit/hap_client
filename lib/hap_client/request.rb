@@ -4,6 +4,41 @@ module HAP
   module Request
     include EncryptionRequest
 
+    def init_request()
+      @req_queue = EM::Queue.new
+      @res_queue = EM::Queue.new
+
+      response_work = nil
+
+      request_work = Proc.new do |req|
+        if encryption_ready?
+          encrypt(req).each do |r|
+            if @socket.nil?
+              send_data(r)
+            else
+              @socket.write(r)
+            end
+          end
+        else
+          if @socket.nil?
+            send_data(req)
+          else
+            @socket.write(req)
+          end
+        end
+
+        init_parser()
+
+        @res_queue.pop(&response_work)
+      end
+
+      response_work = Proc.new do |res|
+        @req_queue.pop(&request_work)
+      end
+
+      @req_queue.pop(&request_work)
+    end
+
     def get(url)
       request("GET", url)
     end
@@ -46,23 +81,7 @@ module HAP
         req << data.to_s
       end
 
-      if encryption_ready?
-        encrypt(req).each do |r|
-          if @socket.nil?
-            send_data(r)
-          else
-            @socket.write(r)
-          end
-        end
-      else
-        if @socket.nil?
-          send_data(req)
-        else
-          @socket.write(req)
-        end
-      end
-
-      init_parser()
+      @req_queue.push(req)
     end
   end
 end

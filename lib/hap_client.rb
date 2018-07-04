@@ -16,6 +16,9 @@ module HAP
       @name = "Unknown Client"
       @mode = :init
       @values = {}
+      @ids = {}
+
+      init_request()
       init_log()
     end
 
@@ -23,36 +26,39 @@ module HAP
       info("Set Value #{aid}:#{iid} to #{value}")
       data = {
         "characteristics" => [{
-                                "aid" => aid,
-                                "iid" => iid,
-                                "value" => value
+                                "aid" => aid.to_i,
+                                "iid" => iid.to_i,
+                                "value" => value.to_i
                               }]
       }
 
       put("/characteristics", "application/hap+json", JSON.generate(data))
     end
 
-    def subscribe(aid, iid)
-      info("Subscribe to #{aid} #{iid}")
-      data = {
-        "characteristics" => [{
-                                "aid" => aid,
-                                "iid" => iid,
-                                "ev" => "true"
-                              }]
-      }
-
-      put("/characteristics", "application/hap+json", JSON.generate(data))
-    end
-
-    def subscribe_to_all()
+    def subscribe(&block)
+      events = []
       @values.each do |service|
         service[1].each do |val|
           value = val[1]
           if value[:perms].include?("ev")
-            subscribe(value[:aid], value[:iid])
+            info("Subscribe to #{value[:aid]}:#{value[:iid]}")
+            events.push({
+                          :aid => value[:aid],
+                          :iid => value[:iid],
+                          :ev => true
+                        })
           end
         end
+      end
+
+      data = {
+        :characteristics => events
+      }
+
+      put("/characteristics", "application/hap+json", JSON.generate(data))
+
+      if block_given?
+        @callback = block
       end
     end
 
@@ -69,6 +75,23 @@ module HAP
       @values[aid][iid][:value]
     end
 
+    def get_type(aid, iid)
+      @ids[aid][iid]
+    end
+
+    def get_id(service_id, characteristic_id)
+      @services.each do |service|
+        if service[:type] == service_id
+          service[:characteristics].each do |char|
+            if char[:type] == characteristic_id
+              return char
+            end
+          end
+        end
+      end
+      return nil
+    end
+
     def to_s
       @name
     end
@@ -76,6 +99,8 @@ module HAP
     private
 
     def parse_message(data)
+      @res_queue.push(1)
+
       case @mode
       when :pair_setup
         pair_setup_parse(data)
@@ -95,17 +120,36 @@ module HAP
     end
 
     def parse_accessories(data)
-      data = JSON.parse(data, :symbolize_names=>true)
+      begin
+        data = JSON.parse(data, :symbolize_names=>true)
+      rescue JSON::ParserError => e
+        error(e.inspect)
+        error(data)
+        return nil
+      end
 
-      services = data[:accessories][0][:services]
+      if data[:accessories]
+        @services = data[:accessories][0][:services]
 
-      services.each do |service|
-        @values[service[:type]] = {}
+        @services.each do |service|
+          @values[service[:type]] = {}
+          @ids[service[:iid]] = {}
 
-        parse_characteristics(service)
+          parse_characteristics(service)
+        end
+      elsif data[:characteristics]
+        parse_event(data)
+        init_parser
       end
 
       return data
+    end
+
+    def parse_event(data)
+      val = data[:characteristics]
+      val.each do |value|
+        on_event(value[:aid], value[:iid], value[:value])
+      end
     end
 
     def parse_characteristics(service)
@@ -117,6 +161,10 @@ module HAP
           :iid => char[:iid],
           :perms => char[:perms],
           :value => val
+        }
+        @ids[char[:aid]][char[:iid]] = {
+          :service => service[:type],
+          :characteristic => char[:type]
         }
 
         if service[:type] == "3E"
