@@ -18,6 +18,12 @@ module HAP
       @values = {}
       @ids = {}
 
+      @manufacturer = ""
+      @model = ""
+      @name = ""
+      @serial = ""
+      @version = ""
+
       init_request()
       init_log()
     end
@@ -72,11 +78,19 @@ module HAP
     end
 
     def get_value(aid, iid)
-      @values[aid][iid][:value]
+      begin
+        return @values[aid][iid][:value]
+      rescue
+        return ""
+      end
     end
 
     def get_type(aid, iid)
-      @ids[aid][iid]
+      begin
+        return @ids[aid][iid]
+      rescue
+        return ""
+      end
     end
 
     def get_id(service_id, characteristic_id)
