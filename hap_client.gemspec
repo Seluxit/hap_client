@@ -8,6 +8,7 @@ Gem::Specification.new do |s|
   s.version     = HapClient::VERSION
   s.date        = '2018-06-15'
   s.summary     = "HAP client"
+  s.required_ruby_version = '>= 2.5.1'
   s.description = "Ruby Gem for Apple Homekit Client"
   s.authors     = ["Andreas Bomholtz"]
   s.email       = 'andreas@seluxit.com'
