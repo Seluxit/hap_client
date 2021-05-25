@@ -24,7 +24,7 @@ Gem::Specification.new do |s|
   s.add_dependency 'ruby_home', '0.1.2'
   s.add_dependency "ruby_home-srp", '1.2.1'
 
-  s.add_development_dependency 'bundler', '~> 1.16'
+  s.add_development_dependency "bundler", ">= 2.2.10"
   s.add_development_dependency 'rake', '~> 12.3'
   s.add_development_dependency 'rspec', '~> 3.0'
 end
